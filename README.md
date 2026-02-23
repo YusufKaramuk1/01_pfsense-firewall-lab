@@ -1,6 +1,6 @@
 # Internal Network Firewall Lab – pfSense, Windows & Kali
 
-> This repository documents an isolated VirtualBox internal network lab created for internship training and internal network security observation.
+> This repository documents an isolated VirtualBox internal network lab created for internship training and internal network behavior analysis.
 
 ---
 
@@ -10,192 +10,157 @@
 
 ## Objective
 
-This lab analyzes how a Windows host behaves when:
+This lab evaluates how a Windows host behaves when inbound ports are filtered by host firewall rules, and whether internal interaction and file retrieval remain possible from an attacker located in the same LAN segment.
 
-- All inbound ports appear filtered  
-- A firewall gateway is present  
-- The attacker is located in the same LAN segment  
+The goal is to observe:
 
-The goal is to observe whether:
-
-**Host discovery, internal interaction, and file retrieval are still possible inside the same network segment even when traditional inbound scanning is blocked.**
+- Host discovery feasibility  
+- Firewall filtering behavior at Layer 3/4  
+- Transition to Layer 2 validation when L3/L4 access is blocked  
+- Internal access attempt and file proof  
 
 ---
 
 ## Lab Environment
 
-| Role | OS / Hostname | IP Address | Notes |
-|------|---------------|------------|------|
-| Firewall Gateway | pfSense | `192.168.50.1` | LAN gateway |
-| Attacker | Kali Linux | `192.168.50.10` | Scanning & validation |
-| Victim | Windows 11 (EVAL) | `192.168.50.11` | Firewall enabled |
-| Network | VirtualBox Internal | `192.168.50.0/24` | Isolated segment |
-
-- All machines are on the same internal network  
-- Windows uses pfSense as default gateway  
-- Environment is fully isolated  
+| Role | OS / Hostname | IP Address |
+|------|---------------|------------|
+| Firewall Gateway | pfSense | `192.168.50.1` |
+| Attacker | Kali Linux | `192.168.50.10` |
+| Victim | Windows 11 (EVAL) | `192.168.50.11` |
+| Network | VirtualBox Internal | `192.168.50.0/24` |
 
 ---
 
-# Step 1 – Network Discovery
+# Step 1 – Attacker Network Verification (`ip a`)
 
-A subnet discovery scan was performed to identify active hosts.
-
-Purpose:
-- Confirm network layout  
-- Identify gateway and victim  
-- Validate connectivity  
-
-![Network Discovery](evidence/01_network_discovery_nmap_sn.png)
-
-**Observation**
-
-- Gateway detected  
-- Victim detected  
-- Attacker confirmed  
-
-All hosts are reachable inside the same network.
-
----
-
-# Step 2 – Target Port Scan
-
-A default port scan was performed against the Windows system.
-
-Purpose:
-- Identify exposed services  
-- Evaluate firewall filtering  
-
-![Default Port Scan](evidence/02_target_port_scan_nmap_default.png)
-
-**Result**
-
-All ports returned as **filtered**, indicating firewall-based blocking.
-
----
-
-# Step 3 – SYN Scan Verification
-
-A SYN scan was used to confirm filtering behavior.
-
-Purpose:
-- Validate firewall drop behavior  
-- Check for silent filtering  
-
-![SYN Scan](evidence/05_syn_scan_nmap_sS.png)
-
-**Result**
-
-- All ports filtered  
-- No direct service exposure  
-
-Inbound scanning alone does not reveal accessible services.
-
----
-
-# Step 4 – Initial SMB Access Attempt
-
-An SMB connection attempt was made to test internal share access.
-
-Purpose:
-- Validate SMB accessibility  
-- Observe firewall impact  
-
-Initial attempt:
-
-![SMB Timeout](evidence/03_smb_attempt_timeout.png)
-
-The first attempt resulted in a timeout, indicating blocked or filtered access.
-
----
-
-# Step 5 – Successful SMB Interaction
-
-A subsequent attempt allowed SMB interaction and directory listing.
-
-![SMB Access](evidence/04_smb_access_success.png)
-
-**Observation**
-
-Internal interaction became possible under correct conditions.
-
-This confirms that filtered ports do not always prevent internal host interaction.
-
----
-
-# Step 6 – Layer-2 Network Validation
-
-ARP and neighbor tables were inspected.
-
-Purpose:
-- Confirm same broadcast domain  
-- Validate MAC resolution  
-
-![ARP and Neighbor](evidence/06_arp_and_ip_neigh.png)
-
-**Result**
-
-- Victim MAC address resolved  
-- Gateway reachable  
-- Direct LAN communication confirmed  
-
-Layer-2 communication exists even when ports are filtered.
-
----
-
-# Step 7 – Attacker Network Configuration
-
-The attacker machine’s interface configuration was verified.
+First, the attacker machine’s IP configuration was verified to confirm it is in the same subnet as the victim.
 
 Purpose:
 - Confirm correct subnet placement  
-- Validate IP configuration  
+- Ensure attacker is in the same LAN as the target  
 
 ![Kali IP Configuration](evidence/10_kali_ip_config_ip_a.png)
 
-Kali is correctly positioned in the same network.
+---
+
+# Step 2 – Network Discovery (`nmap -sn`)
+
+A subnet discovery scan was performed to identify active hosts in the internal segment.
+
+Purpose:
+- Identify live systems  
+- Confirm victim and gateway presence  
+
+![Network Discovery](evidence/01_network_discovery_nmap_sn.png)
 
 ---
 
-# Step 8 – IP Forwarding Preparation
+# Step 3 – Default Target Scan (`nmap <target>`)
 
-IP forwarding was enabled on the attacker machine.
+A default scan was executed against the Windows victim.
 
 Purpose:
-- Prepare for routing or relay scenarios  
-- Validate forwarding capability  
+- Identify exposed services  
+- Observe firewall filtering behavior  
+
+![Default Target Scan](evidence/02_target_port_scan_nmap_default.png)
+
+**Observation**
+- Results returned as **filtered**, indicating inbound filtering.
+
+---
+
+# Step 4 – SYN Scan Validation (`nmap -sS <target>`)
+
+A stealth SYN scan was performed as an additional verification step.
+
+Purpose:
+- Try different scan methods  
+- Confirm whether filtering behavior is consistent  
+
+![SYN Scan](evidence/05_syn_scan_nmap_sS.png)
+
+**Observation**
+- Results remained **filtered** across scan types.
+
+At this stage, it was concluded that Layer 3/4 access through traditional inbound scanning was not viable.
+
+---
+
+# Step 5 – Layer 2 Validation (`arp -a` / `ip neigh`)
+
+Since Layer 3/4 access appeared blocked, Layer 2 visibility was validated next.
+
+Purpose:
+- Confirm same broadcast domain  
+- Verify MAC resolution of victim and gateway  
+- Validate LAN-level presence despite filtered ports  
+
+![ARP and Neighbor Table](evidence/06_arp_and_ip_neigh.png)
+
+---
+
+# Step 6 – IP Forwarding Enablement
+
+IP forwarding was enabled on the attacker machine to prepare for potential relay / routing scenarios during LAN testing.
+
+Purpose:
+- Enable forwarding capability on attacker machine  
+- Prepare for LAN-level traffic manipulation scenarios  
 
 ![IP Forwarding](evidence/08_enable_ip_forwarding.png)
 
 ---
 
-# Step 9 – File Access Validation
+# Step 7 – SMB Connection Attempt (Failed)
 
-A known file on the target system was accessed and verified.
+An SMB connection attempt was made against the administrative share.
 
 Purpose:
-- Confirm host interaction  
-- Validate successful file retrieval  
+- Test SMB reachability under filtered port conditions  
+- Observe authentication / access behavior  
 
-File content accessed from attacker system:
+![SMB Timeout](evidence/03_smb_attempt_timeout.png)
 
-![File Read](evidence/07_file_read_cat_nbr.png)
+Result:
+- Initial attempt failed (timeout / denied behavior observed).
 
-Verification on Windows system:
+---
+
+# Step 8 – SMB Interaction (Successful)
+
+A subsequent SMB attempt succeeded and allowed directory listing / navigation.
+
+Purpose:
+- Validate successful internal interaction  
+- Confirm SMB access becomes possible under the lab conditions  
+
+![SMB Access](evidence/04_smb_access_success.png)
+
+---
+
+# Step 9 – File Proof (Read + Victim-Side Confirmation)
+
+After access was obtained, a known file was read on the attacker system and verified on the victim system for proof.
+
+Purpose:
+- Confirm file retrieval / access  
+- Provide integrity evidence (victim-side confirmation)
+
+![File Read on Kali](evidence/07_file_read_cat_nbr.png)
 
 ![Windows File Proof](evidence/09_windows_file_proof.png)
-
-This confirms successful interaction between attacker and victim inside the LAN.
 
 ---
 
 # Key Observations
 
-- Inbound port scanning returned fully filtered results  
-- Firewall prevented traditional service discovery  
-- Hosts remained visible at Layer-2  
-- Internal interaction was still possible  
-- File retrieval succeeded within LAN  
+- Different Nmap scan methods consistently returned **filtered** results  
+- L3/L4 inbound access appeared blocked by firewall filtering  
+- Layer-2 presence was confirmed via ARP/MAC resolution  
+- SMB attempts showed both failure and success behavior  
+- File access was proven with attacker-side read and victim-side proof  
 
 ---
 
@@ -203,23 +168,13 @@ This confirms successful interaction between attacker and victim inside the LAN.
 
 This lab demonstrates that:
 
-Even when all inbound ports appear filtered,
+Even when inbound scanning indicates fully filtered ports, internal network positioning and Layer-2 visibility can still enable meaningful interaction paths, including SMB-based access and file validation under certain conditions.
 
-- Internal network positioning  
-- Layer-2 visibility  
-- Local access paths  
+A layered defensive approach is required, including:
 
-can still allow interaction between hosts on the same network.
-
-Firewall filtering alone does not fully eliminate internal network interaction risks.
-
-A layered security approach is recommended, including:
-
-- Network segmentation  
-- Host hardening  
-- Lateral movement monitoring  
-- Access control enforcement  
+- Segmentation and internal ACLs  
+- Strict share and credential controls  
+- Monitoring for lateral movement  
+- Endpoint hardening and logging  
 
 ---
-
-**End of Lab**
